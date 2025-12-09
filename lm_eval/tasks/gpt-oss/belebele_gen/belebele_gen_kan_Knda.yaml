@@ -1,5 +1,5 @@
-dataset_name: urd_Arab
+dataset_name: kan_Knda
 fewshot_split: test
 include: _default_template_yaml
-task: belebele_urd_Arab
+task: belebele_gen_kan_Knda
 test_split: test

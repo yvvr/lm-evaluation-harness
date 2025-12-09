@@ -1,5 +1,5 @@
-dataset_name: guj_Gujr
+dataset_name: tel_Telu
 fewshot_split: test
 include: _default_template_yaml
-task: belebele_guj_Gujr
+task: belebele_gen_tel_Telu
 test_split: test

@@ -1,5 +1,5 @@
-dataset_name: asm_Beng
+dataset_name: hin_Latn
 fewshot_split: test
 include: _default_template_yaml
-task: belebele_asm_Beng
+task: belebele_gen_hin_Latn
 test_split: test

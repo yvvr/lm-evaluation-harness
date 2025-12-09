@@ -1,5 +1,5 @@
-dataset_name: pan_Guru
+dataset_name: hin_Deva
 fewshot_split: test
 include: _default_template_yaml
-task: belebele_pan_Guru
+task: belebele_gen_hin_Deva
 test_split: test

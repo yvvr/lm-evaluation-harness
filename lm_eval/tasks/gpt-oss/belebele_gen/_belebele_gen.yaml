@@ -1,0 +1,26 @@
+group: belebele_gen_indic
+task:
+  - belebele_gen_asm_Beng
+  - belebele_gen_ben_Beng
+  - belebele_gen_ben_Latn
+  - belebele_gen_eng_Latn
+  - belebele_gen_guj_Gujr
+  - belebele_gen_hin_Deva
+  - belebele_gen_hin_Latn
+  - belebele_gen_kan_Knda
+  - belebele_gen_mal_Mlym
+  - belebele_gen_mar_Deva
+  - belebele_gen_ory_Orya
+  - belebele_gen_pan_Guru
+  - belebele_gen_snd_Arab
+  - belebele_gen_tam_Taml
+  - belebele_gen_tel_Telu
+  - belebele_gen_urd_Arab
+  - belebele_gen_urd_Latn
+aggregate_metric_list:
+  - aggregation: mean
+    metric: exact_match
+    weight_by_size: true
+    filter_list: strict_match
+metadata:
+  version: 0.1

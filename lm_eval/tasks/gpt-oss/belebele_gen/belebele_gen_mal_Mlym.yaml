@@ -1,5 +1,5 @@
-dataset_name: hin_Deva
+dataset_name: mal_Mlym
 fewshot_split: test
 include: _default_template_yaml
-task: belebele_hin_Deva
+task: belebele_gen_mal_Mlym
 test_split: test

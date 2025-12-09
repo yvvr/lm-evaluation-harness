@@ -1,5 +1,5 @@
-dataset_name: ben_Beng
+dataset_name: urd_Arab
 fewshot_split: test
 include: _default_template_yaml
-task: belebele_ben_Beng
+task: belebele_gen_urd_Arab
 test_split: test
