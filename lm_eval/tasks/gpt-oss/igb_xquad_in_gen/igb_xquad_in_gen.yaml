@@ -1,0 +1,18 @@
+group: igb_xquad_in_gen
+task:
+  - igb_xquad_in_gen_as
+  - igb_xquad_in_gen_bn
+  - igb_xquad_in_gen_en
+  - igb_xquad_in_gen_gu
+  - igb_xquad_in_gen_hi
+  - igb_xquad_in_gen_kn
+  - igb_xquad_in_gen_ml
+  - igb_xquad_in_gen_mr
+  - igb_xquad_in_gen_or
+  - igb_xquad_in_gen_pa
+  - igb_xquad_in_gen_ta
+  - igb_xquad_in_gen_te
+aggregate_metric_list:
+  - aggregation: mean
+    metric: contains
+    weight_by_size: true

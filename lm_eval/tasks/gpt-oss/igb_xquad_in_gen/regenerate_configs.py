@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Quick regeneration script for IGB XQuAD LM Gen configurations.
+Quick regeneration script for IGB XQuAD IN Gen configurations.
 This is a wrapper around generate_configs.py with error handling.
 """
 
@@ -10,7 +10,7 @@ def main():
         # Import and run the main generator
         from generate_configs import main as generate_main
         
-        print("Regenerating IGB XQuAD LM Gen configurations...")
+        print("Regenerating IGB XQuAD IN Gen configurations...")
         result = generate_main()
         
         if result == 0:

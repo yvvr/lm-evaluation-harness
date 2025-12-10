@@ -8,7 +8,7 @@ from lm_eval.api.instance import Instance
 from lm_eval.api.task import ConfigurableTask
 
 
-class IGB_XQuad_LM_Gen(ConfigurableTask):
+class IGB_XQuad_IN_Gen(ConfigurableTask):
     """
     IndicGenBench XQuAD-IN generation task.
     Similar to SQuAD completion but for multilingual Indian languages XQuAD dataset.
@@ -19,8 +19,8 @@ class IGB_XQuad_LM_Gen(ConfigurableTask):
 
     COMMON_CONFIG = {
         "metadata": {"version": VERSION},
-        "task": "igb_xquad_lm_gen",
-        "tag": "igb_xquad_lm_gen",
+        "task": "igb_xquad_in_gen",
+        "tag": "igb_xquad_in_gen",
         "dataset_path": DATASET_PATH,
         "dataset_kwargs": {"field": "examples"},
         "output_type": "generate_until",
@@ -157,7 +157,7 @@ class IGB_XQuad_LM_Gen(ConfigurableTask):
         }
 
 
-class IGB_XQuad_LM_Gen_Lang(IGB_XQuad_LM_Gen):
+class IGB_XQuad_IN_Gen_Lang(IGB_XQuad_IN_Gen):
     """Base class for language-specific IGB XQuAD generation tasks"""
     
     LANG = None  # To be overridden by subclasses
@@ -166,7 +166,7 @@ class IGB_XQuad_LM_Gen_Lang(IGB_XQuad_LM_Gen):
         import copy
 
         lang_config = copy.deepcopy(self.COMMON_CONFIG)
-        lang_config["task"] = f"igb_xquad_lm_gen_{self.LANG}"
+        lang_config["task"] = f"igb_xquad_in_gen_{self.LANG}"
 
         super().__init__(config=lang_config)
 
@@ -195,40 +195,40 @@ class IGB_XQuad_LM_Gen_Lang(IGB_XQuad_LM_Gen):
 
 
 # Language-specific classes
-class IGB_XQuad_LM_Gen_Hi(IGB_XQuad_LM_Gen_Lang):
+class IGB_XQuad_IN_Gen_Hi(IGB_XQuad_IN_Gen_Lang):
     LANG = "hi"
 
-class IGB_XQuad_LM_Gen_En(IGB_XQuad_LM_Gen_Lang):
+class IGB_XQuad_IN_Gen_En(IGB_XQuad_IN_Gen_Lang):
     LANG = "en"
 
-class IGB_XQuad_LM_Gen_As(IGB_XQuad_LM_Gen_Lang):
+class IGB_XQuad_IN_Gen_As(IGB_XQuad_IN_Gen_Lang):
     LANG = "as"
 
-class IGB_XQuad_LM_Gen_Bn(IGB_XQuad_LM_Gen_Lang):
+class IGB_XQuad_IN_Gen_Bn(IGB_XQuad_IN_Gen_Lang):
     LANG = "bn"
 
-class IGB_XQuad_LM_Gen_Gu(IGB_XQuad_LM_Gen_Lang):
+class IGB_XQuad_IN_Gen_Gu(IGB_XQuad_IN_Gen_Lang):
     LANG = "gu"
 
-class IGB_XQuad_LM_Gen_Kn(IGB_XQuad_LM_Gen_Lang):
+class IGB_XQuad_IN_Gen_Kn(IGB_XQuad_IN_Gen_Lang):
     LANG = "kn"
 
-class IGB_XQuad_LM_Gen_Ml(IGB_XQuad_LM_Gen_Lang):
+class IGB_XQuad_IN_Gen_Ml(IGB_XQuad_IN_Gen_Lang):
     LANG = "ml"
 
-class IGB_XQuad_LM_Gen_Mr(IGB_XQuad_LM_Gen_Lang):
+class IGB_XQuad_IN_Gen_Mr(IGB_XQuad_IN_Gen_Lang):
     LANG = "mr"
 
-class IGB_XQuad_LM_Gen_Or(IGB_XQuad_LM_Gen_Lang):
+class IGB_XQuad_IN_Gen_Or(IGB_XQuad_IN_Gen_Lang):
     LANG = "or"
 
-class IGB_XQuad_LM_Gen_Pa(IGB_XQuad_LM_Gen_Lang):
+class IGB_XQuad_IN_Gen_Pa(IGB_XQuad_IN_Gen_Lang):
     LANG = "pa"
 
-class IGB_XQuad_LM_Gen_Ta(IGB_XQuad_LM_Gen_Lang):
+class IGB_XQuad_IN_Gen_Ta(IGB_XQuad_IN_Gen_Lang):
     LANG = "ta"
 
-class IGB_XQuad_LM_Gen_Te(IGB_XQuad_LM_Gen_Lang):
+class IGB_XQuad_IN_Gen_Te(IGB_XQuad_IN_Gen_Lang):
     LANG = "te"
 
 
@@ -242,4 +242,3 @@ def contains_score(prediction: str, labels: List[str]) -> float:
         for label in labels
         if label  # Skip empty labels
     )
-
