@@ -1,0 +1,2 @@
+task: dakshina_ur_in
+class: !function dakshina_gen.Dakshina_Ur_In

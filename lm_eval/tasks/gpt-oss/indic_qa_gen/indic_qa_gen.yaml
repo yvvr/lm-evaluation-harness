@@ -1,0 +1,23 @@
+group: indic_qa_gen
+task:
+  - indic_qa_gen_as
+  - indic_qa_gen_bn
+  - indic_qa_gen_gu
+  - indic_qa_gen_hi
+  - indic_qa_gen_kn
+  - indic_qa_gen_ml
+  - indic_qa_gen_mr
+  - indic_qa_gen_or
+  - indic_qa_gen_pa
+  - indic_qa_gen_ta
+  - indic_qa_gen_te
+aggregate_metric_list:
+  - aggregation: mean
+    metric: f1
+    weight_by_size: true
+  - aggregation: mean
+    metric: exact_match
+    weight_by_size: true
+  - aggregation: mean
+    metric: contains
+    weight_by_size: true

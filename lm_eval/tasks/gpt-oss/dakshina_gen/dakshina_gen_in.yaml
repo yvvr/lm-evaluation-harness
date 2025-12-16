@@ -1,0 +1,21 @@
+group: dakshina_gen_in
+task:
+  - dakshina_hi_in
+  - dakshina_bn_in
+  - dakshina_gu_in
+  - dakshina_kn_in
+  - dakshina_ml_in
+  - dakshina_mr_in
+  - dakshina_pa_in
+  - dakshina_ta_in
+  - dakshina_te_in
+  - dakshina_ur_in
+  - dakshina_si_in
+  - dakshina_sd_in
+aggregate_metric_list:
+  - aggregation: mean
+    metric: cer
+    weight_by_size: true
+  - aggregation: mean
+    metric: chrf++
+    weight_by_size: true

@@ -1,0 +1,11 @@
+group: dakshina_gen
+task:
+  - dakshina_gen_in
+  - dakshina_gen_latn
+aggregate_metric_list:
+  - aggregation: mean
+    metric: cer
+    weight_by_size: true
+  - aggregation: mean
+    metric: chrf++
+    weight_by_size: true
