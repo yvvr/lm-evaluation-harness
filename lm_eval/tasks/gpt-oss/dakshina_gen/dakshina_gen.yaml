@@ -3,7 +3,9 @@ task:
   - dakshina_gen_in
   - dakshina_gen_latn
 aggregate_metric_list:
-  - metric: cer
-    weight: 1.0
-  - metric: chrf++
-    weight: 1.0
+  - aggregation: mean
+    metric: cer
+    weight_by_size: true
+  - aggregation: mean
+    metric: chrf++
+    weight_by_size: true
