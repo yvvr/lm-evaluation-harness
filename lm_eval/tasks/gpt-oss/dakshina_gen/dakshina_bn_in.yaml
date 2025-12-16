@@ -1,0 +1,2 @@
+task: dakshina_bn_in
+class: !function dakshina_gen.Dakshina_Bn_In

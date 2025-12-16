@@ -1,0 +1,2 @@
+task: dakshina_pa_in
+class: !function dakshina_gen.Dakshina_Pa_In

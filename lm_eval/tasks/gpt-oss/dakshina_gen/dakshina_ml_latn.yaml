@@ -1,0 +1,2 @@
+task: dakshina_ml_latn
+class: !function dakshina_gen.Dakshina_Ml_Latn

@@ -1,0 +1,19 @@
+group: dakshina_gen_latn
+task:
+  - dakshina_hi_latn
+  - dakshina_bn_latn
+  - dakshina_gu_latn
+  - dakshina_kn_latn
+  - dakshina_ml_latn
+  - dakshina_mr_latn
+  - dakshina_pa_latn
+  - dakshina_ta_latn
+  - dakshina_te_latn
+  - dakshina_ur_latn
+  - dakshina_si_latn
+  - dakshina_ne_latn
+aggregate_metric_list:
+  - metric: cer
+    weight: 1.0
+  - metric: chrf++
+    weight: 1.0

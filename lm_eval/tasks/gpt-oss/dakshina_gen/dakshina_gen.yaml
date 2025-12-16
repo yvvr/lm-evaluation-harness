@@ -1,0 +1,9 @@
+group: dakshina_gen
+task:
+  - dakshina_gen_in
+  - dakshina_gen_latn
+aggregate_metric_list:
+  - metric: cer
+    weight: 1.0
+  - metric: chrf++
+    weight: 1.0
