@@ -25,6 +25,7 @@ class IndicQA_Gen(ConfigurableTask):
         "task": "indic_qa_gen",
         "tag": "indic_qa_gen",
         "dataset_path": DATASET_PATH,
+        "dataset_kwargs": {"trust_remote_code": True},
         "output_type": "generate_until",
     }
 
