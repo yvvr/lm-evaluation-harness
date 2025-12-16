@@ -255,8 +255,8 @@ class Dakshina_Ur_In(Dakshina_Gen_In_Lang):
 class Dakshina_Si_In(Dakshina_Gen_In_Lang):
     LANG = "si"
 
-class Dakshina_Ne_In(Dakshina_Gen_In_Lang):
-    LANG = "ne"
+class Dakshina_Sd_In(Dakshina_Gen_In_Lang):
+    LANG = "sd"
 
 
 # ============================================================================
@@ -337,8 +337,8 @@ class Dakshina_Ur_Latn(Dakshina_Gen_Latn_Lang):
 class Dakshina_Si_Latn(Dakshina_Gen_Latn_Lang):
     LANG = "si"
 
-class Dakshina_Ne_Latn(Dakshina_Gen_Latn_Lang):
-    LANG = "ne"
+class Dakshina_Sd_Latn(Dakshina_Gen_Latn_Lang):
+    LANG = "sd"
 
 
 # ============================================================================

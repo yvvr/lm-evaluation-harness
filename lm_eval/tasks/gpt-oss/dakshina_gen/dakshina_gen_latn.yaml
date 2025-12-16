@@ -11,7 +11,7 @@ task:
   - dakshina_te_latn
   - dakshina_ur_latn
   - dakshina_si_latn
-  - dakshina_ne_latn
+  - dakshina_sd_latn
 aggregate_metric_list:
   - aggregation: mean
     metric: cer
