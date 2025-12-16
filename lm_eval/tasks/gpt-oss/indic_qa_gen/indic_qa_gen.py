@@ -3,6 +3,7 @@ import unicodedata
 from collections import Counter
 from copy import deepcopy
 from typing import List
+from datasets import Dataset
 
 import numpy as np
 
@@ -47,18 +48,22 @@ class IndicQA_Gen(ConfigurableTask):
         return []
 
     def test_docs(self):
-        """Flatten IndicQA JSON into SQuAD-style examples"""
+        """Flatten IndicQA JSON into a HF Dataset"""
+        rows = []
+
         for article in self.dataset["test"]["data"]:
             for paragraph in article["paragraphs"]:
                 context = paragraph["context"]
                 for qa in paragraph["qas"]:
-                    yield {
+                    rows.append({
                         "id": qa.get("id"),
                         "context": context,
                         "question": qa["question"],
                         "answers": qa["answers"],
                         "category": qa.get("category"),
-                    }
+                    })
+
+        return Dataset.from_list(rows)
 
     def doc_to_text(self, doc):
         """
