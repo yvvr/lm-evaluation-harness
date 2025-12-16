@@ -17,7 +17,7 @@ class IndicQA_Gen(ConfigurableTask):
 
     """
     VERSION = 1
-    DATASET_PATH = "ai4bharat/IndicQA"
+    DATASET_PATH = "hf://datasets/ai4bharat/IndicQA"
     DATASET_NAME = None  # Will be set by language-specific subclasses
 
     COMMON_CONFIG = {
@@ -25,9 +25,9 @@ class IndicQA_Gen(ConfigurableTask):
         "task": "indic_qa_gen",
         "tag": "indic_qa_gen",
         "dataset_path": DATASET_PATH,
-        "dataset_kwargs": {"trust_remote_code": True},
         "output_type": "generate_until",
     }
+
 
     def __init__(self, config=None):
         super().__init__(config=config)
@@ -187,7 +187,7 @@ class IndicQA_Gen_Lang(IndicQA_Gen):
 
         lang_config = copy.deepcopy(self.COMMON_CONFIG)
         lang_config["task"] = f"indic_qa_gen_{self.LANG}"
-        lang_config["dataset_name"] = f"indicqa.{self.LANG}"
+        lang_config["dataset_name"] = self.LANG
 
         super().__init__(config=lang_config)
 
