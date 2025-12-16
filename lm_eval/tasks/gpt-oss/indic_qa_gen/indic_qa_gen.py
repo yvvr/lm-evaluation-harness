@@ -25,7 +25,6 @@ class IndicQA_Gen(ConfigurableTask):
         "task": "indic_qa_gen",
         "tag": "indic_qa_gen",
         "dataset_path": DATASET_PATH,
-        "dataset_revision": "92d96092ae229950973dac3b9998f8b3a8949b0a",
         "output_type": "generate_until",
     }
 
