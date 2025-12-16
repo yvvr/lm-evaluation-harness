@@ -1,5 +1,4 @@
 import re
-import string
 import unicodedata
 from collections import Counter
 from copy import deepcopy
@@ -15,6 +14,7 @@ class IndicQA_Gen(ConfigurableTask):
     """
     IndicQA generation task for multilingual Indian languages.
     Similar to SQuAD completion but uses the ai4bharat/IndicQA dataset.
+
     """
     VERSION = 1
     DATASET_PATH = "ai4bharat/IndicQA"
@@ -25,6 +25,7 @@ class IndicQA_Gen(ConfigurableTask):
         "task": "indic_qa_gen",
         "tag": "indic_qa_gen",
         "dataset_path": DATASET_PATH,
+        "dataset_revision": "92d96092ae229950973dac3b9998f8b3a8949b0a",
         "output_type": "generate_until",
     }
 
@@ -32,7 +33,7 @@ class IndicQA_Gen(ConfigurableTask):
         super().__init__(config=config)
 
     def has_training_docs(self):
-        return False  # IndicQA doesn't have train split
+        return False  # IndicQA only has test split
 
     def has_validation_docs(self):
         return False
@@ -47,57 +48,8 @@ class IndicQA_Gen(ConfigurableTask):
         return []
 
     def test_docs(self):
-        """Load and flatten the IndicQA dataset structure"""
-        # IndicQA has structure: data -> paragraphs -> qas
-        # We need to flatten this into individual QA pairs
-        if not hasattr(self, '_test_docs_cache'):
-            self._test_docs_cache = self._flatten_dataset()
-        return self._test_docs_cache
-
-    def _flatten_dataset(self):
-        """Flatten the nested IndicQA structure into individual QA examples"""
-        flattened_docs = []
-        
-        # Load the raw dataset
-        # The dataset is loaded via the custom loading method
-        from huggingface_hub import hf_hub_download
-        import json
-        
-        # Download the JSON file for the specific language
-        lang_code = getattr(self, 'LANG', 'hi')
-        filename = f"data/indicqa.{lang_code}.json"
-        
-        try:
-            local_path = hf_hub_download(
-                repo_id="ai4bharat/IndicQA",
-                filename=filename,
-                repo_type="dataset"
-            )
-            
-            with open(local_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            # Flatten the nested structure
-            for article in data.get('data', []):
-                for paragraph in article.get('paragraphs', []):
-                    context = paragraph.get('context', '')
-                    for qa in paragraph.get('qas', []):
-                        # Create a flattened document
-                        doc = {
-                            'id': qa.get('id'),
-                            'question': qa.get('question', ''),
-                            'context': context,
-                            'answers': qa.get('answers', []),
-                            'category': qa.get('category', ''),
-                            'lang': lang_code
-                        }
-                        flattened_docs.append(doc)
-        
-        except Exception as e:
-            print(f"Error loading IndicQA dataset: {e}")
-            return []
-        
-        return flattened_docs
+        """Return test documents from the dataset"""
+        return self.dataset["test"]
 
     def doc_to_text(self, doc):
         """
@@ -235,7 +187,7 @@ class IndicQA_Gen_Lang(IndicQA_Gen):
 
         lang_config = copy.deepcopy(self.COMMON_CONFIG)
         lang_config["task"] = f"indic_qa_gen_{self.LANG}"
-        lang_config["dataset_name"] = self.LANG  # Language code for IndicQA
+        lang_config["dataset_name"] = f"indicqa.{self.LANG}"
 
         super().__init__(config=lang_config)
 
