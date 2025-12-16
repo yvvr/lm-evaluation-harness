@@ -316,12 +316,18 @@ def qa_f1_score(prediction: str, ground_truth: str) -> float:
 
 
 def contains_score(prediction: str, labels: List[str]) -> float:
-    """Check if any of the labels appears in the prediction (case-insensitive)"""
+    """Check if any of the non-empty labels appears in the prediction (case-insensitive)"""
     if not labels:
         return 0.0
-    
-    return max(
-        int(bool(re.search(re.compile(re.escape(label), re.IGNORECASE), prediction)))
+
+    matches = [
+        int(bool(re.search(re.escape(label), prediction, re.IGNORECASE)))
         for label in labels
-        if label  # Skip empty labels
-    )
+        if label and label.strip()
+    ]
+
+    # NO-answer case: no valid labels
+    if not matches:
+        return 0.0
+
+    return max(matches)
