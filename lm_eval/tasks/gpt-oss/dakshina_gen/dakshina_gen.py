@@ -47,7 +47,7 @@ class Dakshina_Gen_Base(ConfigurableTask):
                 "and provide the path to dakshina_dataset_v1.0/"
             )
         
-        lang = self.config.lang
+        lang = self.config.metadata["lang"]
         base_path = self.config.dataset_path
         
         # Path format: dakshina_dataset_v1.0/hi/romanized/hi.romanized.rejoined.tsv
@@ -116,7 +116,7 @@ class Dakshina_Gen_Base(ConfigurableTask):
 
     def doc_to_text(self, doc):
         """Format the prompt based on direction"""
-        lang = doc.get("lang", self.config.lang)
+        lang = doc.get("lang", self.config.metadata["lang"])
         if self.DIRECTION == "romanization":
             return f"Transliterate the following text into romanized {lang}.\nInput: {doc['source']}\nOutput:"
         else:  # nativization
@@ -206,7 +206,10 @@ class Dakshina_Gen_In_Lang(Dakshina_Gen_In):
 
         lang_config = copy.deepcopy(self.COMMON_CONFIG)
         lang_config["task"] = f"dakshina_{self.LANG}_in"
-        lang_config["lang"] = self.LANG
+        lang_config["metadata"] = {
+            **lang_config.get("metadata", {}),
+            "lang": self.LANG,
+        }
         
         dataset_path = os.environ.get("DAKSHINA_DATASET_PATH")
         if dataset_path:
@@ -285,7 +288,10 @@ class Dakshina_Gen_Latn_Lang(Dakshina_Gen_Latn):
 
         lang_config = copy.deepcopy(self.COMMON_CONFIG)
         lang_config["task"] = f"dakshina_{self.LANG}_latn"
-        lang_config["lang"] = self.LANG
+        lang_config["metadata"] = {
+            **lang_config.get("metadata", {}),
+            "lang": self.LANG,
+        }
         
         dataset_path = os.environ.get("DAKSHINA_DATASET_PATH")
         if dataset_path:
