@@ -47,8 +47,18 @@ class IndicQA_Gen(ConfigurableTask):
         return []
 
     def test_docs(self):
-        """Return test documents from the dataset"""
-        return self.dataset["test"]
+        """Flatten IndicQA JSON into SQuAD-style examples"""
+        for article in self.dataset["test"]["data"]:
+            for paragraph in article["paragraphs"]:
+                context = paragraph["context"]
+                for qa in paragraph["qas"]:
+                    yield {
+                        "id": qa.get("id"),
+                        "context": context,
+                        "question": qa["question"],
+                        "answers": qa["answers"],
+                        "category": qa.get("category"),
+                    }
 
     def doc_to_text(self, doc):
         """
@@ -59,8 +69,10 @@ class IndicQA_Gen(ConfigurableTask):
         return f"Context: {context}\nQuestion: {question}\nAnswer:"
 
     def doc_to_target(self, doc):
-        """Extract the answer text from the answers structure"""
-        answers = doc["answers"]
+        """
+        Extract the answer text from the answers structure
+        """
+        answers = doc.get("answers", [])
         
         # IndicQA format: answers is a list of dicts with 'text' and 'answer_start'
         if isinstance(answers, list) and len(answers) > 0:
@@ -70,8 +82,6 @@ class IndicQA_Gen(ConfigurableTask):
                 if answer_text == "" or answer_text is None:
                     return ""
                 return answer_text
-            elif isinstance(answers[0], str):
-                return answers[0]
         
         # Fallback - return empty string if structure is unexpected
         return ""
