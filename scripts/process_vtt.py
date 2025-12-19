@@ -111,7 +111,7 @@ def extract_metadata_from_path(vtt_path: Path, base_dir: Path, single_lang: str 
                     'category': 'unknown',
                     'filename': parts[-1]
                 }
-        
+
         # Expected structure: hi-IN/year/source/channel_or_category/file.vtt (5 parts)
         if len(parts) >= 5:
             lang = parts[0]
@@ -181,13 +181,14 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
     # Dictionary to store data per language
     lang_data: Dict[str, Dict[str, Any]] = {}
     
-    # Find all VTT files
-    vtt_files = list(base_path.rglob('*.vtt'))
+    # Count VTT files first (for progress reporting)
+    print("Scanning for VTT files...")
+    vtt_count = sum(1 for _ in base_path.rglob('*.vtt'))
+    print(f"Found {vtt_count} VTT files to process")
     
-    print(f"Found {len(vtt_files)} VTT files to process")
-    
+    # Process files one at a time using generator (memory efficient)
     processed = 0
-    for vtt_file in vtt_files:
+    for vtt_file in base_path.rglob('*.vtt'):
         # Extract metadata from path
         metadata = extract_metadata_from_path(vtt_file, base_path, single_lang)
         
@@ -238,7 +239,7 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
         
         processed += 1
         if processed % 100 == 0:
-            print(f"Processed {processed}/{len(vtt_files)} files...")
+            print(f"Processed {processed}/{vtt_count} files...")
     
     # Convert categories dict to list and write JSON files per language
     for lang, data in lang_data.items():
