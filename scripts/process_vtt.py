@@ -73,7 +73,7 @@ def parse_vtt_file(vtt_path: str) -> str:
         return ""
 
 
-def extract_metadata_from_path(vtt_path: Path, base_dir: Path) -> Dict[str, str]:
+def extract_metadata_from_path(vtt_path: Path, base_dir: Path, single_lang: str = None) -> Dict[str, str]:
     """
     Extract metadata from the file path structure.
     Structure: ./hi-IN/year/source/channel_or_category/file.vtt
@@ -81,6 +81,7 @@ def extract_metadata_from_path(vtt_path: Path, base_dir: Path) -> Dict[str, str]
     Args:
         vtt_path: Path to the VTT file
         base_dir: Base directory (parent of language folders, e.g., '.')
+        single_lang: If provided, treat base_dir as a single language directory
         
     Returns:
         Dictionary with lang, year, source, category
@@ -89,6 +90,27 @@ def extract_metadata_from_path(vtt_path: Path, base_dir: Path) -> Dict[str, str]
         # Get relative path from base directory
         rel_path = vtt_path.relative_to(base_dir)
         parts = rel_path.parts
+        
+        # If single_lang is specified, use it as the language
+        if single_lang:
+            # Structure: year/source/channel_or_category/file.vtt (4 parts)
+            if len(parts) >= 4:
+                return {
+                    'lang': single_lang,
+                    'year': parts[0],
+                    'source': parts[1],
+                    'category': 'unknown' if parts[2].startswith('UC') else parts[2],
+                    'filename': parts[-1]
+                }
+            elif len(parts) == 3:
+                # Structure without category: year/source/file.vtt
+                return {
+                    'lang': single_lang,
+                    'year': parts[0],
+                    'source': parts[1],
+                    'category': 'unknown',
+                    'filename': parts[-1]
+                }
         
         # Expected structure: hi-IN/year/source/channel_or_category/file.vtt (5 parts)
         if len(parts) >= 5:
@@ -139,13 +161,14 @@ def extract_metadata_from_path(vtt_path: Path, base_dir: Path) -> Dict[str, str]
         }
 
 
-def process_vtt_directory(base_dir: str, output_dir: str = None) -> None:
+def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: str = None) -> None:
     """
     Process all VTT files in the directory structure and create JSON files per language.
     
     Args:
-        base_dir: Base directory containing language folders (e.g., ./hi-IN-vtt)
+        base_dir: Base directory containing language folders or single language directory
         output_dir: Output directory for JSON files (defaults to base_dir)
+        single_lang: If provided, treat base_dir as a single language directory with this language code
     """
     base_path = Path(base_dir)
     
@@ -166,7 +189,7 @@ def process_vtt_directory(base_dir: str, output_dir: str = None) -> None:
     processed = 0
     for vtt_file in vtt_files:
         # Extract metadata from path
-        metadata = extract_metadata_from_path(vtt_file, base_path)
+        metadata = extract_metadata_from_path(vtt_file, base_path, single_lang)
         
         # Parse VTT content
         text = parse_vtt_file(str(vtt_file))
@@ -249,10 +272,15 @@ def main():
         help='Output directory for JSON files (default: same as input_dir)',
         default=None
     )
+    parser.add_argument(
+        '--single-lang',
+        help='Language code if input_dir contains a single language (e.g., hi-IN). Use when input_dir IS the language folder.',
+        default=None
+    )
     
     args = parser.parse_args()
     
-    process_vtt_directory(args.input_dir, args.output_dir)
+    process_vtt_directory(args.input_dir, args.output_dir, args.single_lang)
 
 
 if __name__ == '__main__':
