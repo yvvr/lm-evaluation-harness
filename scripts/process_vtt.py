@@ -23,8 +23,23 @@ def parse_vtt_file(vtt_path: str) -> str:
         Combined text from all subtitles, joined with spaces
     """
     try:
-        with open(vtt_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+        # Try UTF-8 first, fall back to other encodings
+        encodings = ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252', 'iso-8859-1']
+        content = None
+
+        for encoding in encodings:
+            try:
+                with open(vtt_path, 'r', encoding=encoding) as f:
+                    content = f.read()
+                break  # Success, stop trying
+            except (UnicodeDecodeError, LookupError):
+                continue  # Try next encoding
+
+        if content is None:
+            # Last resort: read as binary and decode with errors='ignore'
+            with open(vtt_path, 'rb') as f:
+                content = f.read().decode('utf-8', errors='ignore')
+            print(f"Warning: Used fallback decoding for {vtt_path}")
         
         # Split into lines
         lines = content.split('\n')
@@ -48,7 +63,6 @@ def parse_vtt_file(vtt_path: str) -> str:
             
             # Remove timestamp tags like <00:00:00.480><c> and </c>
             # Pattern: <timestamp><c>text</c> or just <c>text</c>
-            import re
             clean_line = re.sub(r'<\d{2}:\d{2}:\d{2}\.\d{3}>', '', line)  # Remove timestamps
             clean_line = re.sub(r'</?c>', '', clean_line)  # Remove <c> and </c> tags
             clean_line = clean_line.strip()
