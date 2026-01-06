@@ -188,13 +188,23 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
+    # Setup logging to file
+    log_file_path = output_path / 'processing.log'
+    log_file = open(log_file_path, 'w', encoding='utf-8')
+    
+    def log(message):
+        """Print to console and write to log file"""
+        print(message)
+        log_file.write(message + '\n')
+        log_file.flush()
+    
     # Dictionary to store data per language
     lang_data: Dict[str, Dict[str, Any]] = {}
     
     # Count VTT files first (for progress reporting)
-    print("Scanning for VTT files...")
+    log("Scanning for VTT files...")
     vtt_count = sum(1 for _ in base_path.rglob('*.vtt'))
-    print(f"Found {vtt_count} VTT files to process")
+    log(f"Found {vtt_count} VTT files to process")
     
     # Process files one at a time using generator (memory efficient)
     processed = 0
@@ -206,7 +216,7 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
         word_count = count_words_in_vtt(str(vtt_file))
         
         if word_count == 0:
-            print(f"Warning: No words found in {vtt_file}")
+            log(f"Warning: No words found in {vtt_file}")
             continue
         
         # Initialize language structure if not exists
@@ -232,7 +242,7 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
         
         processed += 1
         if processed % 100 == 0:
-            print(f"Processed {processed}/{vtt_count} files...")
+            log(f"Processed {processed}/{vtt_count} files...")
     
     # Convert categories dict to list and write JSON files per language
     for lang, data in lang_data.items():
@@ -244,10 +254,14 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
-        print(f"Created {output_file} with {data['total_words']} total words across {len(data['categories'])} categories")
+        log(f"Created {output_file} with {data['total_words']} total words across {len(data['categories'])} categories")
     
-    print(f"\nTotal processed: {processed} files")
-    print(f"Languages: {', '.join(lang_data.keys())}")
+    log(f"\nTotal processed: {processed} files")
+    log(f"Languages: {', '.join(lang_data.keys())}")
+    
+    # Close log file
+    log_file.close()
+    print(f"\nLog saved to: {log_file_path}")
 
 
 def main():
