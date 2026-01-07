@@ -7,8 +7,21 @@ This version does NOT include the actual transcript text - only metadata and wor
 import os
 import json
 import re
+import threading
+import time
 from pathlib import Path
 from typing import Dict, List, Any
+
+
+def aml_heartbeat(interval=300):
+    """Send heartbeat every 5 minutes to prevent AML timeout"""
+    while True:
+        print("[AML] job alive", flush=True)
+        time.sleep(interval)
+
+
+# Start heartbeat thread
+threading.Thread(target=aml_heartbeat, daemon=True).start()
 
 
 def count_words_in_vtt(vtt_path: str) -> int:
@@ -194,7 +207,7 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
     
     def log(message):
         """Print to console and write to log file"""
-        print(message)
+        print(message, flush=True)
         log_file.write(message + '\n')
         log_file.flush()
     
