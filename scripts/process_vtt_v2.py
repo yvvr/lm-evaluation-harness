@@ -22,6 +22,7 @@ def aml_heartbeat(interval=300):
 
 # Start heartbeat thread
 threading.Thread(target=aml_heartbeat, daemon=True).start()
+print("[AML] heartbeat thread started", flush=True)
 
 
 def count_words_in_vtt(vtt_path: str) -> int:
@@ -254,6 +255,11 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
         lang_data[lang]['categories'][category]['word_count'] += word_count
         
         processed += 1
+        
+        # Yield to heartbeat thread every 10 files (GIL release)
+        if processed % 10 == 0:
+            time.sleep(0.01)
+        
         if processed % 100 == 0:
             log(f"Processed {processed}/{vtt_count} files...")
     
