@@ -25,15 +25,44 @@ threading.Thread(target=aml_heartbeat, daemon=True).start()
 print("[AML] heartbeat thread started", flush=True)
 
 
-def count_words_in_vtt(vtt_path: str) -> int:
+def detect_script(text: str, lang_code: str = "hi") -> str:
     """
-    Count words in a VTT file without extracting the full text.
+    Detect script type from text (Devanagari vs Latin).
+    Samples first 10 words for efficiency.
+    
+    Args:
+        text: Text to analyze
+        lang_code: Language code (e.g., 'hi' or 'hi-IN')
+        
+    Returns:
+        Script tag in format 'lang-Script' (e.g., 'hi-Deva' or 'hi-Latn')
+    """
+    # Extract base language code (e.g., 'hi' from 'hi-IN')
+    base_lang = lang_code.split('-')[0]
+    
+    # Sample first 10 words for efficiency
+    words = text.split()[:10]
+    sample_text = ' '.join(words)
+    
+    # Check for Devanagari characters (U+0900 – U+097F)
+    if re.search(r'[\u0900-\u097F]', sample_text):
+        return f"{base_lang}-Deva"  # Devanagari script
+    elif re.search(r'[A-Za-z]', sample_text):
+        return f"{base_lang}-Latn"  # Latin (Roman) script
+    else:
+        # If mixed or unknown, default to Devanagari
+        return f"{base_lang}-Deva"
+
+
+def count_words_in_vtt(vtt_path: str) -> tuple:
+    """
+    Count words in a VTT file and extract text for script detection.
     
     Args:
         vtt_path: Path to the VTT file
         
     Returns:
-        Word count
+        Tuple of (word_count, combined_text)
     """
     try:
         # Try UTF-8 first, fall back to other encodings
@@ -69,13 +98,18 @@ def count_words_in_vtt(vtt_path: str) -> int:
             if '-->' in line:
                 continue
             
-            # Check if line is a number (subtitle index) or contains only [Music] or similar
-            if line.isdigit() or line in ['[संगीत]', '[Music]', '[music]']:
+            # Check if line is a number (subtitle index)
+            if line.isdigit():
                 continue
             
-            # Remove timestamp tags like <00:00:00.480><c> and </c>
+            # Remove timestamp tags like <00:00:00.480> and all HTML-like tags
             clean_line = re.sub(r'<\d{2}:\d{2}:\d{2}\.\d{3}>', '', line)  # Remove timestamps
-            clean_line = re.sub(r'</?c>', '', clean_line)  # Remove <c> and </c> tags
+            clean_line = re.sub(r'<[^>]+>', '', clean_line)  # Remove all HTML-like tags (<c>, </c>, <b>, <it>, <bold>, etc.)
+            
+            # Remove music/sound annotations in brackets or parentheses
+            # Examples: [संगीत], [Music], [music], (संगीत), (Music), etc.
+            clean_line = re.sub(r'[\[\(][^\]\)]*(?:संगीत|Music|music|MUSIC|Applause|applause|Laughter|laughter)[^\]\)]*[\]\)]', '', clean_line, flags=re.IGNORECASE)
+            
             clean_line = clean_line.strip()
             
             # Skip if line becomes empty after cleaning
@@ -89,11 +123,12 @@ def count_words_in_vtt(vtt_path: str) -> int:
         combined_text = ' '.join(text_parts)
         combined_text = re.sub(r'\s+', ' ', combined_text).strip()
         
-        return len(combined_text.split()) if combined_text else 0
+        word_count = len(combined_text.split()) if combined_text else 0
+        return (word_count, combined_text)
     
     except Exception as e:
         print(f"Error processing {vtt_path}: {e}")
-        return 0
+        return (0, "")
 
 
 def extract_metadata_from_path(vtt_path: Path, base_dir: Path, single_lang: str = None) -> Dict[str, str]:
@@ -184,6 +219,35 @@ def extract_metadata_from_path(vtt_path: Path, base_dir: Path, single_lang: str 
         }
 
 
+def should_process_vtt(vtt_path: Path) -> bool:
+    """
+    Check if a VTT file should be processed.
+    Only process base .vtt files, ignore language-specific ones like .en-US.vtt, .en-GB.vtt, etc.
+    
+    Args:
+        vtt_path: Path to the VTT file
+        
+    Returns:
+        True if file should be processed, False otherwise
+    """
+    filename = vtt_path.name
+    
+    # Pattern to match language codes before .vtt extension
+    # Examples: .en-US.vtt, .en-GB.vtt, .de.vtt, .en.vtt, .es.vtt, .fr.vtt
+    # We want to skip these and only process files ending with just .vtt
+    import re
+    
+    # Check if filename has a language code pattern before .vtt
+    # Language codes can be: en, en-US, en-GB, de, es, fr, etc.
+    # Pattern: word boundary, 2-3 letter code, optional dash and 2 letter country code, then .vtt
+    lang_code_pattern = r'\.[a-z]{2}(-[A-Z]{2})?\.vtt$'
+    
+    if re.search(lang_code_pattern, filename):
+        return False  # Skip language-specific files
+    
+    return True  # Process base .vtt files
+
+
 def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: str = None) -> None:
     """
     Process all VTT files in the directory structure and create JSON files per language.
@@ -217,21 +281,26 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
     
     # Count VTT files first (for progress reporting)
     log("Scanning for VTT files...")
-    vtt_count = sum(1 for _ in base_path.rglob('*.vtt'))
-    log(f"Found {vtt_count} VTT files to process")
+    all_vtt_files = list(base_path.rglob('*.vtt'))
+    vtt_files_to_process = [f for f in all_vtt_files if should_process_vtt(f)]
+    vtt_count = len(vtt_files_to_process)
+    log(f"Found {len(all_vtt_files)} total VTT files, {vtt_count} to process (skipping {len(all_vtt_files) - vtt_count} language-specific files)")
     
     # Process files one at a time using generator (memory efficient)
     processed = 0
-    for vtt_file in base_path.rglob('*.vtt'):
+    for vtt_file in vtt_files_to_process:
         # Extract metadata from path
         metadata = extract_metadata_from_path(vtt_file, base_path, single_lang)
         
-        # Count words only (don't extract full text)
-        word_count = count_words_in_vtt(str(vtt_file))
+        # Count words and get text for script detection
+        word_count, text = count_words_in_vtt(str(vtt_file))
         
         if word_count == 0:
             log(f"Warning: No words found in {vtt_file}")
             continue
+        
+        # Detect script from text
+        script = detect_script(text, metadata['lang'])
         
         # Initialize language structure if not exists
         lang = metadata['lang']
@@ -239,20 +308,35 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
             lang_data[lang] = {
                 'lang': lang,
                 'total_words': 0,
-                'categories': {}
+                'categories': {},
+                'scripts': {}  # Track script types
             }
         
         # Update total word count
         lang_data[lang]['total_words'] += word_count
+        
+        # Update script word count
+        if script not in lang_data[lang]['scripts']:
+            lang_data[lang]['scripts'][script] = {
+                'script': script,
+                'word_count': 0
+            }
+        lang_data[lang]['scripts'][script]['word_count'] += word_count
         
         # Update category word count
         category = metadata['category']
         if category not in lang_data[lang]['categories']:
             lang_data[lang]['categories'][category] = {
                 'category': category,
-                'word_count': 0
+                'word_count': 0,
+                'scripts': {}  # Track scripts per category
             }
         lang_data[lang]['categories'][category]['word_count'] += word_count
+        
+        # Update script count within category
+        if script not in lang_data[lang]['categories'][category]['scripts']:
+            lang_data[lang]['categories'][category]['scripts'][script] = 0
+        lang_data[lang]['categories'][category]['scripts'][script] += word_count
         
         processed += 1
         
@@ -263,17 +347,22 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
         if processed % 100 == 0:
             log(f"Processed {processed}/{vtt_count} files...")
     
-    # Convert categories dict to list and write JSON files per language
+    # Convert categories and scripts dicts to lists and write JSON files per language
     for lang, data in lang_data.items():
         # Convert categories dict to list
         data['categories'] = list(data['categories'].values())
+        # Convert scripts dict to list
+        data['scripts'] = list(data['scripts'].values())
         
         output_file = output_path / f"{lang}_wordcount.json"
         
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
+        # Log script breakdown
+        script_summary = ', '.join([f"{s['script']}: {s['word_count']}" for s in data['scripts']])
         log(f"Created {output_file} with {data['total_words']} total words across {len(data['categories'])} categories")
+        log(f"  Script breakdown: {script_summary}")
     
     log(f"\nTotal processed: {processed} files")
     log(f"Languages: {', '.join(lang_data.keys())}")

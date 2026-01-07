@@ -7,8 +7,51 @@ Extracts text from VTT files organized by language, year, source, and category.
 import os
 import json
 import re
+import threading
+import time
 from pathlib import Path
 from typing import Dict, List, Any
+
+
+def aml_heartbeat(interval=300):
+    """Send heartbeat every 5 minutes to prevent AML timeout"""
+    while True:
+        print("[AML] job alive", flush=True)
+        time.sleep(interval)
+
+
+# Start heartbeat thread
+threading.Thread(target=aml_heartbeat, daemon=True).start()
+print("[AML] heartbeat thread started", flush=True)
+
+
+def detect_script(text: str, lang_code: str = "hi") -> str:
+    """
+    Detect script type from text (Devanagari vs Latin).
+    Samples first 10 words for efficiency.
+    
+    Args:
+        text: Text to analyze
+        lang_code: Language code (e.g., 'hi' or 'hi-IN')
+        
+    Returns:
+        Script tag in format 'lang-Script' (e.g., 'hi-Deva' or 'hi-Latn')
+    """
+    # Extract base language code (e.g., 'hi' from 'hi-IN')
+    base_lang = lang_code.split('-')[0]
+    
+    # Sample first 10 words for efficiency
+    words = text.split()[:10]
+    sample_text = ' '.join(words)
+    
+    # Check for Devanagari characters (U+0900 – U+097F)
+    if re.search(r'[\u0900-\u097F]', sample_text):
+        return f"{base_lang}-Deva"  # Devanagari script
+    elif re.search(r'[A-Za-z]', sample_text):
+        return f"{base_lang}-Latn"  # Latin (Roman) script
+    else:
+        # If mixed or unknown, default to Devanagari
+        return f"{base_lang}-Deva"
 
 
 def parse_vtt_file(vtt_path: str) -> str:
@@ -57,17 +100,21 @@ def parse_vtt_file(vtt_path: str) -> str:
             if '-->' in line:
                 continue
             
-            # Check if line is a number (subtitle index) or contains only [Music] or similar
-            if line.isdigit() or line in ['[संगीत]', '[Music]', '[music]']:
+            # Check if line is a number (subtitle index)
+            if line.isdigit():
                 continue
             
             # Remove timestamp tags like <00:00:00.480><c> and </c>
-            # Pattern: <timestamp><c>text</c> or just <c>text</c>
             clean_line = re.sub(r'<\d{2}:\d{2}:\d{2}\.\d{3}>', '', line)  # Remove timestamps
-            clean_line = re.sub(r'</?c>', '', clean_line)  # Remove <c> and </c> tags
+            clean_line = re.sub(r'<[^>]+>', '', clean_line)  # Remove all HTML-like tags (<c>, </c>, <b>, <it>, <bold>, etc.)
+            
+            # Remove music/sound annotations in brackets or parentheses
+            # Examples: [संगीत], [Music], [music], (संगीत), (Music), etc.
+            clean_line = re.sub(r'[\[\(][^\]\)]*(?:संगीत|Music|music|MUSIC|Applause|applause|Laughter|laughter)[^\]\)]*[\]\)]', '', clean_line, flags=re.IGNORECASE)
+            
             clean_line = clean_line.strip()
             
-            # Skip if line becomes empty after cleaning
+            # Skip if line becomes empty after cleaning or is only music annotation
             if not clean_line:
                 continue
             
@@ -175,6 +222,35 @@ def extract_metadata_from_path(vtt_path: Path, base_dir: Path, single_lang: str 
         }
 
 
+def should_process_vtt(vtt_path: Path) -> bool:
+    """
+    Check if a VTT file should be processed.
+    Only process base .vtt files, ignore language-specific ones like .en-US.vtt, .en-GB.vtt, etc.
+    
+    Args:
+        vtt_path: Path to the VTT file
+        
+    Returns:
+        True if file should be processed, False otherwise
+    """
+    filename = vtt_path.name
+    
+    # Pattern to match language codes before .vtt extension
+    # Examples: .en-US.vtt, .en-GB.vtt, .de.vtt, .en.vtt, .es.vtt, .fr.vtt
+    # We want to skip these and only process files ending with just .vtt
+    import re
+    
+    # Check if filename has a language code pattern before .vtt
+    # Language codes can be: en, en-US, en-GB, de, es, fr, etc.
+    # Pattern: word boundary, 2-3 letter code, optional dash and 2 letter country code, then .vtt
+    lang_code_pattern = r'\.[a-z]{2}(-[A-Z]{2})?\.vtt$'
+    
+    if re.search(lang_code_pattern, filename):
+        return False  # Skip language-specific files
+    
+    return True  # Process base .vtt files
+
+
 def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: str = None) -> None:
     """
     Process all VTT files in the directory structure and create JSON files per language.
@@ -192,17 +268,30 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
+    # Setup logging to file
+    log_file_path = output_path / 'processing.log'
+    log_file = open(log_file_path, 'w', encoding='utf-8')
+    
+    def log(message):
+        """Print to console and write to log file"""
+        print(message, flush=True)
+        log_file.write(message + '\n')
+        log_file.flush()
+    
     # Dictionary to store data per language
     lang_data: Dict[str, Dict[str, Any]] = {}
     
     # Count VTT files first (for progress reporting)
-    print("Scanning for VTT files...")
-    vtt_count = sum(1 for _ in base_path.rglob('*.vtt'))
-    print(f"Found {vtt_count} VTT files to process")
+    log("Scanning for VTT files...")
+    all_vtt_files = list(base_path.rglob('*.vtt'))
+    vtt_files_to_process = [f for f in all_vtt_files if should_process_vtt(f)]
+    vtt_count = len(vtt_files_to_process)
+    log(f"Found {len(all_vtt_files)} total VTT files, {vtt_count} to process (skipping {len(all_vtt_files) - vtt_count} language-specific files)")
     
     # Process files one at a time using generator (memory efficient)
     processed = 0
-    for vtt_file in base_path.rglob('*.vtt'):
+    skipped = 0
+    for vtt_file in vtt_files_to_process:
         # Extract metadata from path
         metadata = extract_metadata_from_path(vtt_file, base_path, single_lang)
         
@@ -210,11 +299,14 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
         text = parse_vtt_file(str(vtt_file))
         
         if not text:
-            print(f"Warning: No text extracted from {vtt_file}")
+            log(f"Warning: No text extracted from {vtt_file}")
             continue
         
         # Count words
         word_count = len(text.split())
+        
+        # Detect script
+        script = detect_script(text, metadata['lang'])
         
         # Create transcript entry
         transcript = {
@@ -223,6 +315,7 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
             'category': metadata['category'],
             'filename': metadata['filename'],
             'word_count': word_count,
+            'script': script,
             'data': text
         }
         
@@ -252,8 +345,13 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
         lang_data[lang]['transcripts'].append(transcript)
         
         processed += 1
+        
+        # Yield to heartbeat thread every 10 files (GIL release)
+        if processed % 10 == 0:
+            time.sleep(0.01)
+        
         if processed % 100 == 0:
-            print(f"Processed {processed}/{vtt_count} files...")
+            log(f"Processed {processed}/{vtt_count} files...")
     
     # Convert categories dict to list and write JSON files per language
     for lang, data in lang_data.items():
@@ -265,10 +363,14 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
-        print(f"Created {output_file} with {len(data['transcripts'])} transcripts, {data['total_words']} total words")
+        log(f"Created {output_file} with {len(data['transcripts'])} transcripts, {data['total_words']} total words")
     
-    print(f"\nTotal processed: {processed} files")
-    print(f"Languages: {', '.join(lang_data.keys())}")
+    log(f"\nTotal processed: {processed} files")
+    log(f"Languages: {', '.join(lang_data.keys())}")
+    
+    # Close log file
+    log_file.close()
+    print(f"\nLog saved to: {log_file_path}")
 
 
 def main():
