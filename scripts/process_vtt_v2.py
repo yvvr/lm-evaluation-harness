@@ -266,8 +266,27 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
-    # Setup logging to file
-    log_file_path = output_path / 'processing.log'
+    # Dictionary to store data per language
+    lang_data: Dict[str, Dict[str, Any]] = {}
+    
+    # Count VTT files first (for progress reporting)
+    print("Scanning for VTT files...", flush=True)
+    all_vtt_files = list(base_path.rglob('*.vtt'))
+    vtt_files_to_process = [f for f in all_vtt_files if should_process_vtt(f)]
+    vtt_count = len(vtt_files_to_process)
+    
+    # Determine language for log filename
+    if single_lang:
+        lang_for_log = single_lang
+    elif vtt_files_to_process:
+        # Extract language from first file's path
+        first_metadata = extract_metadata_from_path(vtt_files_to_process[0], base_path, single_lang)
+        lang_for_log = first_metadata['lang']
+    else:
+        lang_for_log = 'unknown'
+    
+    # Setup logging to file with language-specific name
+    log_file_path = output_path / f'{lang_for_log}_wordcount_processing.log'
     log_file = open(log_file_path, 'w', encoding='utf-8')
     
     def log(message):
@@ -276,14 +295,6 @@ def process_vtt_directory(base_dir: str, output_dir: str = None, single_lang: st
         log_file.write(message + '\n')
         log_file.flush()
     
-    # Dictionary to store data per language
-    lang_data: Dict[str, Dict[str, Any]] = {}
-    
-    # Count VTT files first (for progress reporting)
-    log("Scanning for VTT files...")
-    all_vtt_files = list(base_path.rglob('*.vtt'))
-    vtt_files_to_process = [f for f in all_vtt_files if should_process_vtt(f)]
-    vtt_count = len(vtt_files_to_process)
     log(f"Found {len(all_vtt_files)} total VTT files, {vtt_count} to process (skipping {len(all_vtt_files) - vtt_count} language-specific files)")
     
     # Process files one at a time using generator (memory efficient)
