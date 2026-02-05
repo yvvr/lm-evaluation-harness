@@ -80,6 +80,26 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--max_length",
+        type=int,
+        default=0,
+        help=(
+            "Max tokens per forward pass. If input is longer, use sliding-window scoring. "
+            "0 uses the model context cap (recommended)."
+        ),
+    )
+
+    parser.add_argument(
+        "--stride",
+        type=int,
+        default=0,
+        help=(
+            "Sliding-window stride in tokens (step size). 0 picks a default (half of max_length). "
+            "Smaller = more accurate but slower."
+        ),
+    )
+
+    parser.add_argument(
         "--trust_remote_code",
         action="store_true",
         help="Allow custom model/tokenizer code from the Hub.",
@@ -93,6 +113,7 @@ class PPLResult:
     perplexity: float
     mean_nll: float
     num_predicted_tokens: int
+
 
 def _read_json_texts(
     *,
@@ -149,11 +170,74 @@ def _nll_sum_for_input_ids(*, model: Any, input_ids) -> tuple[float, int]:
         return 0.0, 0
 
     with torch.no_grad():
-        outputs = model(input_ids, labels=input_ids)
+        outputs = model(input_ids, labels=input_ids, use_cache=False)
         loss = outputs.loss
 
     nll_sum = float(loss) * num_pred_tokens
     return nll_sum, num_pred_tokens
+
+
+def _nll_sum_for_input_ids_sliding_window(
+    *,
+    model: Any,
+    input_ids,
+    max_length: int,
+    stride: int,
+) -> tuple[float, int]:
+    """Return (nll_sum, num_predicted_tokens) using sliding-window scoring.
+
+    This avoids very large allocations from scoring extremely long sequences in one pass.
+    """
+    import torch
+
+    seq_len = int(input_ids.size(1))
+    if seq_len <= 1:
+        return 0.0, 0
+
+    if max_length <= 0:
+        raise ValueError("max_length must be > 0 for sliding-window scoring")
+    if stride <= 0:
+        raise ValueError("stride must be > 0 for sliding-window scoring")
+    if stride > max_length:
+        stride = max_length
+
+    nll_sum = 0.0
+    total_pred_tokens = 0
+
+    prev_end = 0
+    for begin in range(0, seq_len, stride):
+        end = min(begin + max_length, seq_len)
+
+        # Predict only the new tokens since the previous window end.
+        new_tokens = end - prev_end
+        if new_tokens <= 0:
+            break
+
+        input_window = input_ids[:, begin:end]
+        target_ids = input_window.clone()
+        if new_tokens < int(target_ids.size(1)):
+            target_ids[:, :-new_tokens] = -100
+
+        # Count predicted tokens exactly as Transformers does (labels are shifted by 1 internally).
+        num_pred_tokens = int((target_ids[:, 1:] != -100).sum().item())
+        if num_pred_tokens <= 0:
+            prev_end = end
+            if end >= seq_len:
+                break
+            continue
+
+        with torch.no_grad():
+            outputs = model(input_window, labels=target_ids, use_cache=False)
+            loss = outputs.loss
+
+        nll_sum += float(loss) * num_pred_tokens
+        total_pred_tokens += num_pred_tokens
+
+        prev_end = end
+        if end >= seq_len:
+            break
+
+    return nll_sum, total_pred_tokens
 
 
 def _pick_device(device: str) -> str:
@@ -205,6 +289,28 @@ def _pick_dtype(dtype: str, device: str):
         return None
 
 
+def _get_context_cap(*, model: Any, tokenizer: Any) -> int:
+    """Best-effort context length cap for safe scoring."""
+    cap = getattr(getattr(model, "config", None), "max_position_embeddings", None)
+    if isinstance(cap, int) and cap > 0:
+        return cap
+
+    tok_cap = getattr(tokenizer, "model_max_length", None)
+    if isinstance(tok_cap, int) and 0 < tok_cap < 1_000_000:
+        return tok_cap
+
+    return 4096
+
+
+def _resolve_window_params(*, model: Any, tokenizer: Any, max_length: int, stride: int) -> tuple[int, int]:
+    context_cap = _get_context_cap(model=model, tokenizer=tokenizer)
+    resolved_max_length = context_cap if (max_length is None or max_length <= 0) else min(int(max_length), context_cap)
+    resolved_stride = int(stride) if (stride is not None and stride > 0) else max(1, resolved_max_length // 2)
+    if resolved_stride > resolved_max_length:
+        resolved_stride = resolved_max_length
+    return resolved_max_length, resolved_stride
+
+
 def compute_perplexity_hf(
     *,
     model_name_or_path: str,
@@ -212,6 +318,8 @@ def compute_perplexity_hf(
     device: str = "auto",
     device_map: Optional[str] = None,
     dtype: str = "auto",
+    max_length: int = 0,
+    stride: int = 0,
     trust_remote_code: bool = False,
 ) -> PPLResult:
     """Compute perplexity over `text` with a Hugging Face causal LM."""
@@ -262,10 +370,25 @@ def compute_perplexity_hf(
     input_ids = enc["input_ids"]
     input_ids = input_ids.to(model.device)
 
-    nll_sum, total_pred_tokens = _nll_sum_for_input_ids(
+    resolved_max_length, resolved_stride = _resolve_window_params(
         model=model,
-        input_ids=input_ids,
+        tokenizer=tokenizer,
+        max_length=max_length,
+        stride=stride,
     )
+
+    if int(input_ids.size(1)) > resolved_max_length:
+        nll_sum, total_pred_tokens = _nll_sum_for_input_ids_sliding_window(
+            model=model,
+            input_ids=input_ids,
+            max_length=resolved_max_length,
+            stride=resolved_stride,
+        )
+    else:
+        nll_sum, total_pred_tokens = _nll_sum_for_input_ids(
+            model=model,
+            input_ids=input_ids,
+        )
     if total_pred_tokens <= 0:
         raise ValueError("Input text is too short after tokenization (need at least 2 tokens)")
 
@@ -284,6 +407,8 @@ def compute_perplexity_json_hf(
     device: str = "auto",
     device_map: Optional[str] = None,
     dtype: str = "auto",
+    max_length: int = 0,
+    stride: int = 0,
     trust_remote_code: bool = False,
 ) -> tuple[PPLResult, dict[str, int]]:
     """Compute combined perplexity across all texts in a JSON file."""
@@ -326,6 +451,13 @@ def compute_perplexity_json_hf(
         else:
             model.to("cpu")
 
+    resolved_max_length, resolved_stride = _resolve_window_params(
+        model=model,
+        tokenizer=tokenizer,
+        max_length=max_length,
+        stride=stride,
+    )
+
     # Fixed schema defaults for this workspace.
     json_array_key = "transcripts"
     json_field = "corrected_data"
@@ -351,10 +483,18 @@ def compute_perplexity_json_hf(
         input_ids = enc["input_ids"]
         input_ids = input_ids.to(model.device)
 
-        nll_i, tok_i = _nll_sum_for_input_ids(
-            model=model,
-            input_ids=input_ids,
-        )
+        if int(input_ids.size(1)) > resolved_max_length:
+            nll_i, tok_i = _nll_sum_for_input_ids_sliding_window(
+                model=model,
+                input_ids=input_ids,
+                max_length=resolved_max_length,
+                stride=resolved_stride,
+            )
+        else:
+            nll_i, tok_i = _nll_sum_for_input_ids(
+                model=model,
+                input_ids=input_ids,
+            )
         nll_sum += nll_i
         total_pred_tokens += tok_i
 
@@ -387,6 +527,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             device=args.device,
             device_map=args.device_map,
             dtype=args.dtype,
+            max_length=args.max_length,
+            stride=args.stride,
             trust_remote_code=args.trust_remote_code,
         )
     except Exception as e:
