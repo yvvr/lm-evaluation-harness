@@ -37,8 +37,9 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--input-file",
         required=True,
         help=(
-            "Path to the JSON file to evaluate. Expected format: a top-level object with a 'transcripts' array; "
-            "each element should have a 'corrected_data' field."
+            "Path to input to evaluate. Supports: "
+            "(1) .json: a top-level object with a 'transcripts' array; each element should have a 'corrected_data' field; "
+            "(2) .txt: one sentence per line."
         ),
     )
 
@@ -100,6 +101,16 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--ppl_unit",
+        default="token",
+        choices=["token", "word"],
+        help=(
+            "Perplexity unit. 'token' computes token-level perplexity (HF standard). "
+            "'word' normalizes the same token NLL by whitespace-delimited word count."
+        ),
+    )
+
+    parser.add_argument(
         "--trust_remote_code",
         action="store_true",
         help="Allow custom model/tokenizer code from the Hub.",
@@ -157,6 +168,30 @@ def _read_json_texts(
         texts.append(val)
 
     return texts, total_records
+
+
+def _read_txt_texts(*, txt_file: str, limit: int) -> tuple[list[str], int]:
+    """Return list of non-empty lines and total line count (before limit)."""
+    with open(txt_file, "r", encoding="utf-8") as f:
+        lines = f.read().splitlines()
+
+    total_lines = len(lines)
+    if limit and limit > 0:
+        lines = lines[:limit]
+
+    texts: list[str] = []
+    for line in lines:
+        val = line.strip()
+        if not val:
+            continue
+        texts.append(val)
+
+    return texts, total_lines
+
+
+def _count_words(text: str) -> int:
+    # Simple whitespace word count. Works well for languages/scripts that use spaces.
+    return len(text.split())
 
 
 def _nll_sum_for_input_ids(*, model: Any, input_ids) -> tuple[float, int]:
@@ -320,6 +355,7 @@ def compute_perplexity_hf(
     dtype: str = "auto",
     max_length: int = 0,
     stride: int = 0,
+    ppl_unit: str = "token",
     trust_remote_code: bool = False,
 ) -> PPLResult:
     """Compute perplexity over `text` with a Hugging Face causal LM."""
@@ -392,7 +428,13 @@ def compute_perplexity_hf(
     if total_pred_tokens <= 0:
         raise ValueError("Input text is too short after tokenization (need at least 2 tokens)")
 
-    mean_nll = nll_sum / max(total_pred_tokens, 1)
+    if ppl_unit == "word":
+        num_words = _count_words(text)
+        if num_words <= 0:
+            raise ValueError("Input text has no words (after stripping)")
+        mean_nll = nll_sum / num_words
+    else:
+        mean_nll = nll_sum / max(total_pred_tokens, 1)
     perplexity = math.exp(mean_nll)
 
     return PPLResult(perplexity=perplexity, mean_nll=mean_nll, num_predicted_tokens=total_pred_tokens)
@@ -409,6 +451,7 @@ def compute_perplexity_json_hf(
     dtype: str = "auto",
     max_length: int = 0,
     stride: int = 0,
+    ppl_unit: str = "token",
     trust_remote_code: bool = False,
 ) -> tuple[PPLResult, dict[str, int]]:
     """Compute combined perplexity across all texts in a JSON file."""
@@ -474,6 +517,8 @@ def compute_perplexity_json_hf(
 
     nll_sum = 0.0
     total_pred_tokens = 0
+    total_input_tokens = 0
+    total_words = 0
 
     # Perplexity=exp(−N1​i=1∑N​logP(wi​))
     # Perplexity is the exponential of the average surprise 
@@ -481,6 +526,8 @@ def compute_perplexity_json_hf(
     for i, text in enumerate(texts, start=1):
         enc = tokenizer(text, return_tensors="pt")
         input_ids = enc["input_ids"]
+        total_input_tokens += int(input_ids.numel())
+        total_words += _count_words(text)
         input_ids = input_ids.to(model.device)
 
         if int(input_ids.size(1)) > resolved_max_length:
@@ -499,18 +546,141 @@ def compute_perplexity_json_hf(
         total_pred_tokens += tok_i
 
         if report_every and report_every > 0 and (i % report_every == 0 or i == len(texts)):
-            ppl_so_far = math.exp(nll_sum / max(total_pred_tokens, 1))
+            denom = total_words if ppl_unit == "word" else max(total_pred_tokens, 1)
+            ppl_so_far = math.exp(nll_sum / max(denom, 1))
             print(
                 f"progress: {i}/{len(texts)} texts, tokens={total_pred_tokens}, ppl={ppl_so_far:.6f}",
                 file=sys.stderr,
             )
 
-    mean_nll = nll_sum / max(total_pred_tokens, 1)
+    if ppl_unit == "word":
+        if total_words <= 0:
+            raise ValueError("No words found across scored texts")
+        mean_nll = nll_sum / total_words
+    else:
+        mean_nll = nll_sum / max(total_pred_tokens, 1)
     perplexity = math.exp(mean_nll)
 
     meta = {
         "total_records": int(total_records),
         "scored_texts": int(len(texts)),
+        "num_input_tokens": int(total_input_tokens),
+        "num_words": int(total_words),
+    }
+    return PPLResult(perplexity=perplexity, mean_nll=mean_nll, num_predicted_tokens=total_pred_tokens), meta
+
+
+def compute_perplexity_txt_hf(
+    *,
+    model_name_or_path: str,
+    txt_file: str,
+    limit: int = 0,
+    report_every: int = 50,
+    device: str = "auto",
+    device_map: Optional[str] = None,
+    dtype: str = "auto",
+    max_length: int = 0,
+    stride: int = 0,
+    ppl_unit: str = "token",
+    trust_remote_code: bool = False,
+) -> tuple[PPLResult, dict[str, int]]:
+    """Compute combined perplexity across all non-empty lines in a .txt file."""
+
+    try:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+    except Exception as e:
+        raise RuntimeError(
+            "Missing dependencies. Install at least: transformers, torch. "
+            "(Optionally: accelerate, sentencepiece for some models.)"
+        ) from e
+
+    resolved_device = _pick_device(device)
+    resolved_dtype = _pick_dtype(dtype, resolved_device)
+    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name_or_path,
+        trust_remote_code=trust_remote_code,
+        token=hf_token,
+        use_fast=True,
+    )
+
+    model: Any = AutoModelForCausalLM.from_pretrained(
+        model_name_or_path,
+        trust_remote_code=trust_remote_code,
+        token=hf_token,
+        torch_dtype=resolved_dtype,
+        low_cpu_mem_usage=True,
+        device_map=device_map,
+    )
+
+    model.eval()
+
+    if device_map is None:
+        if resolved_device == "cuda":
+            model.to("cuda")
+        elif resolved_device == "mps":
+            model.to("mps")
+        else:
+            model.to("cpu")
+
+    resolved_max_length, resolved_stride = _resolve_window_params(
+        model=model,
+        tokenizer=tokenizer,
+        max_length=max_length,
+        stride=stride,
+    )
+
+    texts, total_lines = _read_txt_texts(txt_file=txt_file, limit=limit)
+    if not texts:
+        raise ValueError("No non-empty lines found in txt file")
+
+    nll_sum = 0.0
+    total_pred_tokens = 0
+    total_input_tokens = 0
+    total_words = 0
+
+    for i, text in enumerate(texts, start=1):
+        enc = tokenizer(text, return_tensors="pt")
+        input_ids = enc["input_ids"]
+        total_input_tokens += int(input_ids.numel())
+        total_words += _count_words(text)
+        input_ids = input_ids.to(model.device)
+
+        if int(input_ids.size(1)) > resolved_max_length:
+            nll_i, tok_i = _nll_sum_for_input_ids_sliding_window(
+                model=model,
+                input_ids=input_ids,
+                max_length=resolved_max_length,
+                stride=resolved_stride,
+            )
+        else:
+            nll_i, tok_i = _nll_sum_for_input_ids(model=model, input_ids=input_ids)
+
+        nll_sum += nll_i
+        total_pred_tokens += tok_i
+
+        if report_every and report_every > 0 and (i % report_every == 0 or i == len(texts)):
+            denom = total_words if ppl_unit == "word" else max(total_pred_tokens, 1)
+            ppl_so_far = math.exp(nll_sum / max(denom, 1))
+            print(
+                f"progress: {i}/{len(texts)} lines, tokens={total_pred_tokens}, ppl={ppl_so_far:.6f}",
+                file=sys.stderr,
+            )
+
+    if ppl_unit == "word":
+        if total_words <= 0:
+            raise ValueError("No words found across scored lines")
+        mean_nll = nll_sum / total_words
+    else:
+        mean_nll = nll_sum / max(total_pred_tokens, 1)
+    perplexity = math.exp(mean_nll)
+
+    meta = {
+        "total_records": int(total_lines),
+        "scored_texts": int(len(texts)),
+        "num_input_tokens": int(total_input_tokens),
+        "num_words": int(total_words),
     }
     return PPLResult(perplexity=perplexity, mean_nll=mean_nll, num_predicted_tokens=total_pred_tokens), meta
 
@@ -519,18 +689,36 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = _parse_args(argv)
 
     try:
-        res, meta = compute_perplexity_json_hf(
-            model_name_or_path=args.model,
-            json_file=args.input_file,
-            limit=args.limit,
-            report_every=args.report_every,
-            device=args.device,
-            device_map=args.device_map,
-            dtype=args.dtype,
-            max_length=args.max_length,
-            stride=args.stride,
-            trust_remote_code=args.trust_remote_code,
-        )
+        _, ext = os.path.splitext(args.input_file)
+        ext = ext.lower()
+        if ext == ".txt":
+            res, meta = compute_perplexity_txt_hf(
+                model_name_or_path=args.model,
+                txt_file=args.input_file,
+                limit=args.limit,
+                report_every=args.report_every,
+                device=args.device,
+                device_map=args.device_map,
+                dtype=args.dtype,
+                max_length=args.max_length,
+                stride=args.stride,
+                ppl_unit=args.ppl_unit,
+                trust_remote_code=args.trust_remote_code,
+            )
+        else:
+            res, meta = compute_perplexity_json_hf(
+                model_name_or_path=args.model,
+                json_file=args.input_file,
+                limit=args.limit,
+                report_every=args.report_every,
+                device=args.device,
+                device_map=args.device_map,
+                dtype=args.dtype,
+                max_length=args.max_length,
+                stride=args.stride,
+                ppl_unit=args.ppl_unit,
+                trust_remote_code=args.trust_remote_code,
+            )
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
@@ -538,9 +726,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Keep output easy to parse.
     print(f"model={args.model}")
     print(f"input_file={args.input_file}")
+    print(f"ppl_unit={args.ppl_unit}")
     if meta:
         print(f"total_records={meta.get('total_records', 0)}")
         print(f"scored_texts={meta.get('scored_texts', 0)}")
+        print(f"num_input_tokens={meta.get('num_input_tokens', 0)}")
+        print(f"num_words={meta.get('num_words', 0)}")
     print(f"num_predicted_tokens={res.num_predicted_tokens}")
     print(f"mean_nll={res.mean_nll:.8f}")
     print(f"perplexity={res.perplexity:.6f}")
